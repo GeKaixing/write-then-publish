@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Esther不二 | 写了就发</title>
+    <title>开星 | 写了就发</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2317202f'/%3E%3Cpath d='M18 17h28v7H18zm0 13h20v6H18zm0 12h28v6H18z' fill='%23fff'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="src/styles.css?v=20260715-obsidian-direct" />
   </head>
@@ -35,7 +35,7 @@
         <div class="brand-row">
           <div class="brand-title">
             <h1>写了就发</h1>
-            <span class="brand-english">Esther不二 · @SjwEsther</span>
+            <span class="brand-english">开星 · @wsmyyzmkta</span>
             <p id="pageCount">0 张图片</p>
           </div>
           <div class="mode-switch" aria-label="切换工作区">
@@ -74,6 +74,9 @@
           </div>
 
           <div class="toolbar" aria-label="文字样式">
+            <button type="button" class="tool-button" id="profileToggleBtn" title="展开头像栏" aria-label="展开头像栏">
+              <i data-lucide="user-round-check"></i>
+            </button>
             <button type="button" class="tool-button" data-format="h1" title="大标题">H1</button>
             <button type="button" class="tool-button" data-format="h2" title="小标题">H2</button>
             <button type="button" class="tool-button" data-format="bold" title="加粗"><strong>B</strong></button>
@@ -260,6 +263,18 @@
                     图片最大高
                     <input id="imageHeightInput" type="number" min="220" max="760" value="520" />
                   </label>
+                  <div class="wide bg-image-section">
+                    <label class="bg-image-label">背景图</label>
+                    <input id="bgImageInput" type="file" accept="image/*" />
+                    <button id="removeBgBtn" class="secondary-button" type="button">恢复默认</button>
+                  </div>
+                  <div class="wide ratio-section">
+                    <span class="ratio-label">卡片比例</span>
+                    <div class="ratio-buttons">
+                      <button type="button" class="secondary-button" data-card-ratio="3:4">3:4</button>
+                      <button type="button" class="secondary-button active" data-card-ratio="3:5">3:5</button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </details>
@@ -339,14 +354,6 @@
         </div>
       </section>
     </main>
-
-    <footer class="site-credit" aria-label="项目署名">
-      <span>Esther不二</span>
-      <a href="https://github.com/esthersjw/write-then-publish" target="_blank" rel="noopener noreferrer">GitHub</a>
-      <a href="https://xhslink.com/m/AlYEQruvY4V" target="_blank" rel="noopener noreferrer">小红书</a>
-      <a href="https://x.com/SjwEsther" target="_blank" rel="noopener noreferrer">𝕏 @SjwEsther</a>
-      <span class="site-credit-source">原项目：<a href="https://github.com/fxyadela/write-then-publish" target="_blank" rel="noopener noreferrer">捏捏番茄</a></span>
-    </footer>
 
     <div id="cropModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="cropTitle">
       <div class="modal-card">

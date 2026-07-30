@@ -728,8 +728,88 @@ input[type="color"] {
   align-items: center;
 }
 
-body[data-app-mode="article"] .profile-inline {
+body[data-app-mode="article"] .profile-inline,
+body[data-profile-bar-hidden="true"] .profile-inline {
   display: none;
+}
+
+.settings-grid label:has(.bg-image-label) {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.bg-image-section {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--line);
+  margin-top: 2px;
+}
+
+.bg-image-section .bg-image-label {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--muted);
+  white-space: nowrap;
+  margin: 0;
+}
+
+.bg-image-section input[type="file"] {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.bg-image-section button {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+@media (max-width: 620px) {
+  .bg-image-section {
+    flex-wrap: wrap;
+  }
+  .bg-image-section input[type="file"] {
+    flex: 1 1 100%;
+  }
+}
+
+.ratio-section {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 2px;
+}
+
+.ratio-section .ratio-label {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ratio-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.ratio-buttons .secondary-button {
+  min-width: 48px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 6px;
+}
+
+.ratio-buttons .secondary-button.active {
+  color: var(--active-text);
+  background: var(--active-bg);
+  border-color: var(--active-border);
 }
 
 .two-col,
