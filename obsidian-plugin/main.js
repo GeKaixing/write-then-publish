@@ -169,22 +169,38 @@ module.exports = class WriteThenPublishPlugin extends Plugin {
       throw new Error("无法定位默认头像常量，插件资源与网页版不同步");
     }
 
+    // Obsidian 的 iframe 可能带有 Node 的 module/exports 全局变量，
+    // 会让 Lucide 的 UMD 头误走 CommonJS 分支，导致 window.lucide 从未注册。
+    // 这里强制走浏览器全局分支，保证 createIcons() 能正常执行。
+    const lucideUmdMarker =
+      '(function(a,n){typeof exports=="object"&&typeof module<"u"?n(exports):typeof define=="function"&&define.amd?define(["exports"],n):(a=typeof globalThis<"u"?globalThis:a||self,n(a.lucide={}))})(this,(function(a){"use strict";';
+    const browserLucide = lucideJs.replace(
+      lucideUmdMarker,
+      '(function(a,n){a=typeof globalThis<"u"?globalThis:a||self,n(a.lucide={})})(this,(function(a){"use strict";',
+    );
+    if (browserLucide === lucideJs) {
+      throw new Error("无法定位 Lucide UMD 头，插件资源与网页版不同步");
+    }
+    if (!browserLucide.includes("a.createIcons=")) {
+      throw new Error("Lucide 资源校验失败，插件资源与网页版不同步");
+    }
+
     const init = {
       storage: this.data.storage || {},
       vaultName: this.app.vault.getName(),
     };
 
     let html = indexHtml;
-    html = html.replace(/<link\s+rel="stylesheet"\s+href="src\/styles\.css[^>]*>/i, `<style>\n${css}\n</style>`);
-    html = html.replace('<script src="vendor/jszip.min.js"></script>', `<script>\n${jszipJs}\n</script>`);
+    html = html.replace(/<link\s+rel="stylesheet"\s+href="src\/styles\.css[^>]*>/i, () => `<style>\n${css}\n</style>`);
+    html = html.replace('<script src="vendor/jszip.min.js"></script>', () => `<script>\n${jszipJs}\n</script>`);
     html = html.replace(
       /<script\s+src="https:\/\/cdn\.jsdelivr\.net\/npm\/lucide[^>]*>\s*<\/script>/i,
-      `<script>\n${lucideJs}\n</script>`,
+      () => `<script>\n${browserLucide}\n</script>`,
     );
-    html = html.replace('<script src="vendor/html2canvas.min.js"></script>', `<script>\n${html2canvasJs}\n</script>`);
+    html = html.replace('<script src="vendor/html2canvas.min.js"></script>', () => `<script>\n${html2canvasJs}\n</script>`);
     html = html.replace(
       /<script\s+src="src\/app\.js[^>]*>\s*<\/script>/i,
-      [
+      () => [
         `<script>window.__PLUGIN_INIT__ = ${JSON.stringify(init)};</script>`,
         `<script>\n${bridgeJs}\n</script>`,
         `<script>\n${patchedAppJs}\n</script>`,

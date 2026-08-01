@@ -1865,6 +1865,7 @@ async function findObsidianFileByName(directory, name) {
 }
 
 function replaceEditorContent(content) {
+  content = stripYamlFrontmatter(content);
   commitTextHistory();
   els.content.value = content;
   els.content.focus();
@@ -1872,6 +1873,18 @@ function replaceEditorContent(content) {
   commitTextHistory();
   updateImageList();
   requestRender();
+}
+
+function stripYamlFrontmatter(content) {
+  const text = String(content || "").replace(/^\uFEFF/, "");
+  const lines = text.split(/\r?\n/);
+  if (!lines.length || lines[0].trim() !== "---") return text;
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i].trim() === "---") {
+      return lines.slice(i + 1).join("\n").replace(/^\n+/, "");
+    }
+  }
+  return text;
 }
 
 function closeObsidianImportMenu() {
@@ -2774,7 +2787,7 @@ function isMarkdownImageBlock(line) {
 }
 
 function parseBlocks(content, images = {}) {
-  const normalized = content.replace(/\r\n/g, "\n");
+  const normalized = stripYamlFrontmatter(content).replace(/\r\n/g, "\n");
   const lines = normalized.split("\n");
   const imageLookup = buildImageReferenceLookup(images);
   const lineOffsets = [];
@@ -3844,7 +3857,7 @@ function renderArticlePreview(settings) {
 }
 
 function markdownToArticleHtml(markdown, images = {}) {
-  const lines = String(markdown || "").replace(/\r\n/g, "\n").split("\n");
+  const lines = stripYamlFrontmatter(markdown).replace(/\r\n/g, "\n").split("\n");
   const imageLookup = buildImageReferenceLookup(images);
   const html = [];
   let paragraph = [];
