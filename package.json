@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "open": "open index.html",
-    "start": "python3 -m http.server 5173"
+    "start": "python3 -m http.server 5173",
+    "sync:plugin": "node scripts/sync-plugin.mjs"
   }
 }
