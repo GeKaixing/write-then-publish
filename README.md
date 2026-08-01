@@ -49,6 +49,7 @@
 - `查找替换`：支持查找、替换当前、全文替换。
 - `导出下载`：支持单张下载和批量打包下载。
 - `长文下载`：长文模式支持导出为 PNG 长图，保留当前排版样式。
+- `Chrome 自动发布`：图文卡片可直接填入小红书、微信公众号、抖音、小黑盒发布页。
 - `编辑撤销`：支持 `Command + Z` 撤销和 `Command + Shift + Z` 重做。
 - `黑白主题`：界面按钮、卡片背景和字体颜色会随主题自适应。
 
@@ -102,19 +103,15 @@
 
 历史记录保存在浏览器本地存储中，不依赖后端服务。
 
-## 本地使用
+## 安装与运行
 
-这个项目是纯前端静态页面，可以直接打开 `index.html` 使用。
+### 网页版
 
-也可以在项目目录执行：
-
-```bash
-npm run open
-```
-
-或启动本地服务：
+需要 Chrome/Edge 和 Python 3（或 Node 环境）：
 
 ```bash
+git clone https://github.com/GeKaixing/write-then-publish.git
+cd write-then-publish
 npm start
 ```
 
@@ -124,7 +121,29 @@ npm start
 http://127.0.0.1:5173/
 ```
 
+项目是纯前端静态页面，不需要安装依赖。不要直接双击打开 `index.html`：`file://` 协议下 Canvas 的 `toBlob()` 会因浏览器安全策略抛出 `SecurityError`，导致导出下载失败，请始终通过本地服务访问。
+
+### Chrome 自动发布扩展
+
+1. 启动网页版并保持页面打开。
+2. 在 Chrome 打开 `chrome://extensions/`。
+3. 打开右上角「开发者模式」。
+4. 点击「加载已解压的扩展程序」，选择仓库里的 `extension/` 目录。
+5. 回到「写了就发」页面，执行 `Command + Shift + R` 强刷一次，直到顶部显示「扩展已连接」。
+
+安装后，在图文卡片模式点击顶栏的「小红书 / 公众号 / 抖音 / 小黑盒」按钮，扩展会打开对应平台发布页并自动填入图片、标题和正文；确认平台已登录后，手动点击发布。
+
+### Obsidian 插件
+
+1. 把 `obsidian-plugin/` 整个目录复制到笔记仓库的 `.obsidian/plugins/write-then-publish/`。
+2. 在 Obsidian 设置中启用社区插件，然后启用「写了就发」。
+3. 使用命令面板执行「打开『写了就发』」。
+
+插件与网页版功能一致，支持 `![[图片.png]]` 和 `![](附件/图片.png)` 导入；导出文件会写入当前活动笔记所在的仓库目录。
+
 ## 使用流程
+
+### 快速开始
 
 1. 在左侧编辑框输入或粘贴内容。
 2. 选择 `图文卡片` 或 `长文` 工作区。
@@ -134,6 +153,15 @@ http://127.0.0.1:5173/
 6. 在右侧预览区检查排版。
 7. 需要复用时点击 `转长文` 或 `转图文`。
 8. 图文模式下可单张下载或批量下载。
+
+### 发布到平台
+
+1. 切换到「图文卡片」模式并确认卡片预览正确。
+2. 确认顶部状态显示「扩展已连接」。
+3. 点击目标平台按钮（小红书 / 公众号 / 抖音 / 小黑盒）。
+4. 扩展自动打开发布页并填入内容，登录状态下确认无误后手动发布。
+
+发布只负责自动填入，不会代替你点击发布按钮。
 
 ## 文字上色
 
@@ -167,8 +195,10 @@ http://127.0.0.1:5173/
 ```text
 .
 ├── index.html
-├── package.json
-├── vercel.json
+├── package.json            # 唯一版本源
+├── scripts/sync-surfaces.mjs
+├── extension/              # Chrome 扩展
+├── obsidian-plugin/        # Obsidian 插件
 ├── src
 │   ├── app.js
 │   └── styles.css
@@ -179,3 +209,26 @@ http://127.0.0.1:5173/
 │   └── screenshots
 └── assets
 ```
+
+## 版本管理
+
+四端（网页 / Obsidian 插件 / Chrome 扩展 / Codex skill）共用同一个版本号，唯一来源是根目录 `package.json` 的 `version` 字段。
+
+发版或改完共享资源后执行：
+
+```bash
+# 改版本号
+npm version patch --no-git-tag-version   # 或 minor / major / 手动改 package.json
+
+# 同步到各端
+npm run sync
+```
+
+说明：
+
+- `npm run sync`：写入网页端 `APP_VERSION`、Obsidian `manifest.json` / `versions.json`、扩展 `manifest.json` + `content.js`，并同步 skill 内置前端副本
+- `npm run sync:plugin` / `sync:extension` / `sync:skill` / `version:sync`：只同步指定目标
+- skill 默认目录：`~/.codex/skills/write-then-publish-render`，可用环境变量 `WTP_SKILL_DIR` 覆盖
+
+## 感谢fxyadela开源
+https://github.com/fxyadela/write-then-publish

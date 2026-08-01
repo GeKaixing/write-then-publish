@@ -1,7 +1,7 @@
 {
   "id": "write-then-publish",
   "name": "写了就发",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "minAppVersion": "1.4.0",
   "description": "在 Obsidian 中使用“写了就发”：图文卡片分页、长文排版、导出 PNG / ZIP 到当前仓库。",
   "author": "开星",

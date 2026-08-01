@@ -1,3 +1,4 @@
+const APP_VERSION = "1.1.0"; // @wtp-version
 const CANVAS_WIDTH = 864;
 let CANVAS_HEIGHT = 1440;
 const CARD_RATIOS = { "3:4": 1152, "3:5": 1440 };
@@ -32,11 +33,11 @@ const els = {
   pages: qs("#pages"),
   pageCount: qs("#pageCount"),
   status: qs("#statusText"),
+  extensionStatus: qs("#extensionStatus"),
   historySidebar: qs("#historySidebar"),
   historyTitle: qs("#historyTitle"),
   historyNote: qs("#historyNote"),
   historyToggle: qs("#historyToggleBtn"),
-  historyClose: qs("#historyCloseBtn"),
   sidebarObsidianPanel: qs("#sidebarObsidianPanel"),
   sidebarObsidianRefresh: qs("#sidebarObsidianRefreshBtn"),
   sidebarObsidianContent: qs("#sidebarObsidianContent"),
@@ -51,6 +52,11 @@ const els = {
   downloadZip: qs("#downloadZipBtn"),
   openImagePreview: qs("#openImagePreviewBtn"),
   downloadArticle: qs("#downloadArticleBtn"),
+  publishXhs: qs("#publishXhsBtn"),
+  publishWechat: qs("#publishWechatBtn"),
+  publishDouyin: qs("#publishDouyinBtn"),
+  publishXiaoheihe: qs("#publishXiaoheiheBtn"),
+  publishToolbar: qs(".publish-toolbar"),
   scrollMode: qs("#scrollModeBtn"),
   articleSettings: qs("#articleSettings"),
   articleThemeButtons: document.querySelectorAll("[data-article-theme]"),
@@ -696,8 +702,29 @@ function updateAppMode() {
   els.downloadZip.hidden = state.appMode === "article";
   els.openImagePreview.hidden = state.appMode === "article";
   els.downloadArticle.hidden = state.appMode !== "article";
+  if (els.publishXhs) els.publishXhs.hidden = state.appMode === "article";
+  if (els.publishWechat) els.publishWechat.hidden = state.appMode === "article";
+  if (els.publishDouyin) els.publishDouyin.hidden = state.appMode === "article";
+  if (els.publishXiaoheihe) els.publishXiaoheihe.hidden = state.appMode === "article";
+  if (els.publishToolbar) els.publishToolbar.hidden = state.appMode === "article";
   els.headerModeToggle.hidden = state.appMode === "article";
   updateObsidianBrowserVisibility();
+}
+
+function updateExtensionIndicator() {
+  if (!els.extensionStatus) return;
+  const connected = document.documentElement.dataset.wtpExtensionReady === "1";
+  const extensionVersion = document.documentElement.dataset.wtpExtensionVersion || "";
+  els.extensionStatus.dataset.state = connected ? "connected" : "missing";
+  els.extensionStatus.textContent = connected
+    ? (extensionVersion ? `扩展已连接 v${extensionVersion}` : "扩展已连接")
+    : "扩展未连接";
+}
+
+function applyAppVersion() {
+  const badge = qs("#appVersion");
+  if (badge) badge.textContent = `v${APP_VERSION}`;
+  document.documentElement.dataset.wtpAppVersion = APP_VERSION;
 }
 
 async function setAppMode(mode) {
@@ -1099,6 +1126,31 @@ function projectSlug() {
   return title.replace(/[\\/:*?"<>|]/g, "").trim().slice(0, 32) || "未命名图文";
 }
 
+function buildPublishDescription(data) {
+  const source = String(data?.content || "");
+  const lines = source.split("\n").map((line) => line
+    .replace(/^\s*#+\s*/, "")
+    .replace(/^>\s*/, "")
+    .replace(/\[\[image:[\w-]+\]\]/g, "")
+    .replace(/^!\[\[[^\]\n]+\]\]$/g, "")
+    .replace(/^!\[[^\]\n]*\]\([^)]*\)$/g, "")
+    .replace(/\{\{(?:color|bg):[^|]*\|([^}]*)\}\}/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/(^|\s)_([^_]+)_(?=\s|$)/g, "$1$2")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^[-*+]\s+/, "• ")
+    .replace(/^\d+[.)]\s+/, "• ")
+    .trim());
+  return lines
+    .filter(Boolean)
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, 2000);
+}
+
 function formatProjectTime(time) {
   const date = new Date(time);
   if (Number.isNaN(date.getTime())) return "";
@@ -1187,6 +1239,11 @@ function setHistoryOpen(open) {
   els.workspace?.classList.toggle("history-open", open);
   els.historyToggle?.setAttribute("aria-label", open ? "收起历史记录" : "打开历史记录");
   els.historyToggle?.setAttribute("title", open ? "收起历史记录" : "打开历史记录");
+  const icon = els.historyToggle?.querySelector("[data-lucide]");
+  if (icon) {
+    icon.setAttribute("data-lucide", open ? "panel-left-close" : "panel-left-open");
+    if (window.lucide) window.lucide.createIcons();
+  }
 }
 
 function toggleHistory() {
@@ -4455,6 +4512,78 @@ async function downloadArticleImage() {
   }
 }
 
+function collectPublishTask(platform) {
+  if (state.appMode !== "cards" || !state.canvases.length) {
+    return { error: "请先在图文卡片模式生成卡片" };
+  }
+  const project = findHistoryProject(state.currentProjectId);
+  const images = state.canvases
+    .map((canvas) => canvas.toDataURL(EXPORT_IMAGE_MIME))
+    .filter(Boolean);
+  if (!images.length) {
+    return { error: "没有可发布的图片，请先渲染卡片" };
+  }
+  return {
+    task: {
+      id: `wtp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      platform,
+      title: projectSlug(),
+      description: buildPublishDescription(project?.data || {}),
+      images,
+      createdAt: Date.now(),
+    },
+  };
+}
+
+let publishCompleteTimer = null;
+
+async function publishToPlatform(platform) {
+  const platformNames = { xhs: "小红书", wechat: "公众号", douyin: "抖音", xiaoheihe: "小黑盒" };
+  if (publishCompleteTimer) {
+    clearTimeout(publishCompleteTimer);
+    publishCompleteTimer = null;
+  }
+  let result;
+  try {
+    result = collectPublishTask(platform);
+  } catch (error) {
+    console.error(error);
+    els.status.textContent = "生成发布图片失败：请确认已用 http://localhost:5173 打开页面，并刷新后重试";
+    return;
+  }
+  if (result.error) {
+    els.status.textContent = result.error;
+    return;
+  }
+  const task = result.task;
+  try {
+    window.localStorage.setItem("wtp_pending_publish", JSON.stringify(task));
+  } catch (error) {
+    console.error(error);
+    els.status.textContent = "发布任务太大，无法写入本地存储，请减少卡片数量后重试";
+    return;
+  }
+  let publishRequestAccepted = false;
+  const onPublishRequestAccepted = () => { publishRequestAccepted = true; };
+  window.addEventListener("wtp-publish-request-accepted", onPublishRequestAccepted, { once: true });
+  window.dispatchEvent(new CustomEvent("wtp-publish-request", { detail: { platform } }));
+  window.removeEventListener("wtp-publish-request-accepted", onPublishRequestAccepted);
+  const supportedHosts = new Set(["localhost", "127.0.0.1", "hiesther.com", "www.hiesther.com"]);
+  const hostSupported = supportedHosts.has(location.hostname);
+  if (!publishRequestAccepted) {
+    document.documentElement.dataset.wtpExtensionReady = "";
+    updateExtensionIndicator();
+    els.status.textContent = hostSupported
+      ? `扩展未注入当前页面：请在 chrome://extensions 刷新「写了就发-自动发布」，再 Cmd+Shift+R 强刷本页后重试`
+      : `当前地址不在扩展支持范围：请用 Chrome 打开 http://localhost:5173 或 https://hiesther.com（当前 ${location.href}）`;
+    return;
+  }
+  els.status.textContent = `正在打开${platformNames[platform]}发布页并自动填入...`;
+  publishCompleteTimer = setTimeout(() => {
+    els.status.textContent = `仍未收到${platformNames[platform]}自动填入回执，请检查已打开的${platformNames[platform]}发布页：确认已登录，未填入时请手动上传发布`;
+  }, 60000);
+}
+
 async function waitForPreviewImages(container) {
   const images = Array.from(container.querySelectorAll("img"));
   await Promise.all(images.map((image) => {
@@ -4694,7 +4823,6 @@ function bindEvents() {
   els.replaceOne.addEventListener("click", replaceCurrent);
   els.replaceAll.addEventListener("click", replaceAll);
   els.historyToggle.addEventListener("click", toggleHistory);
-  els.historyClose.addEventListener("click", () => setHistoryOpen(false));
   els.historyFilterButtons.forEach((button) => {
     button.addEventListener("click", () => setHistoryFilter(button.dataset.historyFilter));
   });
@@ -4705,6 +4833,10 @@ function bindEvents() {
   els.themeToggle.addEventListener("click", toggleUiTheme);
   els.downloadZip.addEventListener("click", downloadAll);
   els.downloadArticle.addEventListener("click", downloadArticleImage);
+  els.publishXhs?.addEventListener("click", () => publishToPlatform("xhs"));
+  els.publishWechat?.addEventListener("click", () => publishToPlatform("wechat"));
+  els.publishDouyin?.addEventListener("click", () => publishToPlatform("douyin"));
+  els.publishXiaoheihe?.addEventListener("click", () => publishToPlatform("xiaoheihe"));
   els.openImagePreview.addEventListener("click", () => openImagePreview(0));
   els.imagePreviewClose.addEventListener("click", closeImagePreview);
   els.imagePreviewPrevious.addEventListener("click", () => stepImagePreview(-1));
@@ -4716,8 +4848,24 @@ function bindEvents() {
   els.imagePreviewModal.addEventListener("click", (event) => {
     if (event.target === els.imagePreviewModal) closeImagePreview();
   });
+  window.addEventListener("wtp-publish-complete", (event) => {
+    if (publishCompleteTimer) {
+      clearTimeout(publishCompleteTimer);
+      publishCompleteTimer = null;
+    }
+    const detail = event.detail || {};
+    const names = { xhs: "小红书", wechat: "公众号", douyin: "抖音", xiaoheihe: "小黑盒" };
+    if (detail.ok) {
+      els.status.textContent = `已自动填入${names[detail.platform] || ""}发布页，请检查后手动发布`;
+    } else {
+      els.status.textContent = `自动填入失败：${detail.error || "平台页面结构可能已变化"}`;
+    }
+  });
+  window.addEventListener("wtp-extension-ready", updateExtensionIndicator);
+  updateExtensionIndicator();
 }
 
+applyAppVersion();
 loadPanelLayout();
 applyPanelLayout();
 const initialFormState = loadState();

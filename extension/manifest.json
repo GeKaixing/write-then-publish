@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "写了就发-自动发布",
+  "version": "1.1.0",
+  "description": "把写了就发生成的图文卡片自动填入小红书、微信公众号、抖音、小黑盒发布页",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://creator.xiaohongshu.com/*",
+    "https://mp.weixin.qq.com/*",
+    "https://creator.douyin.com/*",
+    "https://www.xiaoheihe.cn/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "http://hiesther.com/*",
+        "http://www.hiesther.com/*",
+        "https://hiesther.com/*",
+        "https://www.hiesther.com/*",
+        "https://creator.xiaohongshu.com/*",
+        "https://mp.weixin.qq.com/*",
+        "https://creator.douyin.com/*",
+        "https://www.xiaoheihe.cn/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
+  ]
+}

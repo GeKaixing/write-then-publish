@@ -7,21 +7,15 @@
   <title>开星 | 写了就发</title>
   <link rel="icon"
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2317202f'/%3E%3Cpath d='M18 17h28v7H18zm0 13h20v6H18zm0 12h28v6H18z' fill='%23fff'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="src/styles.css?v=20260715-obsidian-direct" />
+  <link rel="stylesheet" href="src/styles.css?v=20260801-wtp-publish-16" />
 </head>
 
 <body>
   <main class="workspace">
     <aside id="historySidebar" class="history-sidebar" aria-label="历史记录">
-      <button id="historyToggleBtn" class="history-tab" type="button" title="打开历史记录" aria-label="打开历史记录">
-        <i data-lucide="panel-left-open"></i>
-      </button>
       <div class="history-drawer">
         <div class="history-head">
           <span id="historyTitle">历史记录</span>
-          <button id="historyCloseBtn" class="icon-button ghost" type="button" title="收起历史记录" aria-label="收起历史记录">
-            <i data-lucide="panel-left-close"></i>
-          </button>
         </div>
         <small class="history-note" id="historyNote">自动保存，点击恢复</small>
         <div class="history-filter" aria-label="历史记录筛选">
@@ -47,7 +41,7 @@
     <aside class="editor-panel" aria-label="编辑器">
       <div class="brand-row">
         <div class="brand-title">
-          <h1>写了就发</h1>
+          <h1>写了就发 <span id="appVersion" class="app-version">v1.1.0</span></h1>
           <span class="brand-english">开星 · @wsmyyzmkta</span>
           <p id="pageCount">0 张图片</p>
         </div>
@@ -56,6 +50,9 @@
           <button type="button" data-app-mode="article">长文</button>
         </div>
         <div class="brand-actions">
+          <button class="icon-button" id="historyToggleBtn" type="button" title="打开历史记录" aria-label="打开历史记录">
+            <i data-lucide="panel-left-open"></i>
+          </button>
           <button class="icon-button" id="newProjectBtn" type="button" title="新建图文" aria-label="新建图文">
             <i data-lucide="plus"></i>
           </button>
@@ -304,27 +301,38 @@
 
     <section class="preview-panel" aria-label="图片预览">
       <div class="preview-topbar">
-        <div>
-          <h2>预览与下载</h2>
-          <span id="statusText">自动分页已开启</span>
-        </div>
-        <div class="topbar-actions">
-          <button id="scrollModeBtn" class="secondary-button" type="button">
-            <i data-lucide="scroll-text"></i>
-            滑动截图
-          </button>
-          <button id="downloadZipBtn" class="primary-button" type="button">
-            <i data-lucide="download"></i>
-            批量下载
-          </button>
-          <button id="openImagePreviewBtn" class="secondary-button" type="button" title="逐张放大预览">
-            <i data-lucide="maximize-2"></i>
-            逐张预览
-          </button>
-          <button id="downloadArticleBtn" class="primary-button" type="button" hidden>
-            <i data-lucide="download"></i>
-            下载长图
-          </button>
+        <div class="preview-mainbar">
+          <div class="preview-heading">
+            <h2>预览与下载</h2>
+            <div class="preview-meta">
+              <span id="statusText">自动分页已开启</span>
+            </div>
+          </div>
+          <div class="topbar-actions">
+            <div class="topbar-ratio" aria-label="卡片比例">
+              <span class="ratio-label">卡片比例</span>
+              <div class="ratio-buttons">
+                <button type="button" class="secondary-button" data-card-ratio="3:4">3:4</button>
+                <button type="button" class="secondary-button active" data-card-ratio="3:5">3:5</button>
+              </div>
+            </div>
+            <button id="scrollModeBtn" class="secondary-button" type="button">
+              <i data-lucide="scroll-text"></i>
+              滑动截图
+            </button>
+            <button id="downloadZipBtn" class="primary-button" type="button">
+              <i data-lucide="download"></i>
+              批量下载
+            </button>
+            <button id="openImagePreviewBtn" class="secondary-button" type="button" title="逐张放大预览">
+              <i data-lucide="maximize-2"></i>
+              逐张预览
+            </button>
+            <button id="downloadArticleBtn" class="primary-button" type="button" hidden>
+              <i data-lucide="download"></i>
+              下载长图
+            </button>
+          </div>
         </div>
       </div>
       <div class="preview-body">
@@ -458,7 +466,7 @@
   <script src="vendor/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lucide@1.8.0/dist/umd/lucide.min.js"></script>
   <script src="vendor/html2canvas.min.js"></script>
-  <script src="src/app.js?v=20260715-obsidian-direct"></script>
+  <script src="src/app.js?v=20260801-wtp-publish-16"></script>
 </body>
 
 </html>

@@ -1,10 +1,14 @@
 {
   "name": "esther-buer-write-then-publish",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
     "open": "open index.html",
     "start": "python3 -m http.server 5173",
-    "sync:plugin": "node scripts/sync-plugin.mjs"
+    "sync:plugin": "node scripts/sync-surfaces.mjs --targets=obsidian",
+    "sync": "node scripts/sync-surfaces.mjs",
+    "sync:skill": "node scripts/sync-surfaces.mjs --targets=skill",
+    "sync:extension": "node scripts/sync-surfaces.mjs --targets=extension",
+    "version:sync": "node scripts/sync-surfaces.mjs --targets=version"
   }
 }

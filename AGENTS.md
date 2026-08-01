@@ -17,7 +17,11 @@
 ```
 .
 ├── index.html           # 页面结构（HTML + 样式/脚本引用）
-├── package.json         # npm 脚本（start → python3 http.server 5173）
+├── package.json         # 唯一版本源 + npm 脚本
+├── scripts/
+│   └── sync-surfaces.mjs # 多端版本与资源同步
+├── extension/           # Chrome 自动发布扩展
+├── obsidian-plugin/     # Obsidian 插件
 ├── vercel.json          # Vercel 静态部署配置
 ├── CNAME                # 自定义域名
 ├── src/
@@ -172,3 +176,20 @@ indexedDB.deleteDatabase('estherBuerWriteThenPublishMedia')
 - 图片按路径从本机读取，保留图片位置
 - Obsidian 文件浏览器可浏览仓库文件，点击导入内容
 
+
+
+## 版本管理
+
+网页版、Obsidian 插件、Chrome 扩展、Codex skill 共用 `package.json` 的 `version`。
+
+改版本或共享前端后执行：
+
+```bash
+npm run sync
+```
+
+脚本会：
+- 写回 `src/app.js` 的 `APP_VERSION` 与页面版本徽章
+- 更新 `obsidian-plugin/manifest.json` + `versions.json`，并同步 `plugin-assets/`
+- 更新 `extension/manifest.json` 与 `extension/content.js` 的 `EXTENSION_VERSION`
+- 同步 `~/.codex/skills/write-then-publish-render` 前端副本与 `VERSION` / `SKILL.md`
