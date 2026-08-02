@@ -1,4 +1,4 @@
-const APP_VERSION = "1.1.0"; // @wtp-version
+const APP_VERSION = "1.1.4"; // @wtp-version
 const CANVAS_WIDTH = 864;
 let CANVAS_HEIGHT = 1440;
 const CARD_RATIOS = { "3:4": 1152, "3:5": 1440 };
@@ -66,6 +66,7 @@ const els = {
   contentImage: qs("#contentImageInput"),
   obsidianImportMenu: qs("#obsidianImportMenu"),
   connectObsidianVault: qs("#connectObsidianVaultBtn"),
+  restoreObsidianMedia: qs("#restoreObsidianMediaBtn"),
   obsidianVaultStatus: qs("#obsidianVaultStatus"),
   obsidianImportStatus: qs("#obsidianImportStatus"),
   obsidianFileBrowser: qs("#obsidianFileBrowser"),
@@ -561,7 +562,7 @@ function readForm() {
     avatar: state.avatar,
     avatarStorageKey: state.avatarStorageKey,
     avatarCrop: state.avatarCrop,
-    images: state.images,
+    images: { ...(state.images || {}) },
     source: state.importSource || null,
   };
 }
@@ -896,6 +897,47 @@ function mediaKeyForImage(imageId) {
   return `image:${imageId}`;
 }
 
+function internalImageReferenceIds(content) {
+  const ids = new Set();
+  for (const match of String(content || "").matchAll(/\[\[image:([^\]]+)\]\]/g)) {
+    const id = String(match[1] || "").split("|")[0].trim();
+    if (/^[\w-]+$/.test(id)) ids.add(id);
+  }
+  return Array.from(ids);
+}
+
+async function restoreImagesFromMedia(content, images = state.images) {
+  const restored = [];
+  for (const id of internalImageReferenceIds(content)) {
+    const existing = images[id];
+    if (existing?.src) continue;
+    const fallbackKey = mediaKeyForImage(id);
+    const storageKeys = existing?.storageKey && existing.storageKey !== fallbackKey
+      ? [existing.storageKey, fallbackKey]
+      : [fallbackKey];
+    try {
+      for (const storageKey of storageKeys) {
+        const src = await readMedia(storageKey);
+        if (!src) continue;
+        images[id] = {
+          ...(existing || {}),
+          src,
+          storageKey,
+          name: existing?.name || id,
+          sourcePath: existing?.sourcePath || id,
+          crop: existing?.crop ?? null,
+          layout: existing?.layout ?? defaultNewImageLayout(),
+        };
+        restored.push(id);
+        break;
+      }
+    } catch {
+      // 图片可能已从媒体库移除，保留原引用等待重新导入。
+    }
+  }
+  return restored;
+}
+
 async function persistMediaInData(data) {
   const tasks = [];
   Object.entries(data.images || {}).forEach(([id, image]) => {
@@ -934,12 +976,33 @@ function compactDataForLocalStorage(data) {
 async function hydrateProjectMedia(data) {
   if (!data || isBuiltInProjectId(state.currentProjectId)) return;
   const tasks = [];
-  Object.values(data.images || {}).forEach((image) => {
-    if (!image?.src && image.storageKey) {
-      tasks.push(readMedia(image.storageKey).then((src) => {
-        if (src) image.src = src;
-      }));
-    }
+  Object.entries(data.images || {}).forEach(([id, image]) => {
+    if (image?.src) return;
+    const storageKey = image?.storageKey || mediaKeyForImage(id);
+    if (!storageKey) return;
+    tasks.push(readMedia(storageKey).then((src) => {
+      if (src) {
+        image.src = src;
+        image.storageKey = storageKey;
+      }
+    }));
+  });
+  internalImageReferenceIds(data.content).forEach((id) => {
+    if (data.images?.[id]?.src) return;
+    if (data.images?.[id]) return;
+    const storageKey = mediaKeyForImage(id);
+    tasks.push(readMedia(storageKey).then((src) => {
+      if (!src) return;
+      data.images = data.images || {};
+      data.images[id] = {
+        src,
+        storageKey,
+        name: id,
+        sourcePath: id,
+        crop: null,
+        layout: defaultNewImageLayout(),
+      };
+    }));
   });
   if (!data.avatar && data.avatarStorageKey) {
     tasks.push(readMedia(data.avatarStorageKey).then((src) => {
@@ -955,6 +1018,14 @@ async function hydrateProjectMedia(data) {
     await Promise.all(tasks);
   } catch (error) {
     console.warn("无法恢复本地图片", error);
+  }
+}
+
+function invalidatePendingRender() {
+  state.renderSeq = (state.renderSeq || 0) + 1;
+  if (els.pages) {
+    els.pages.classList.remove("article-mode");
+    els.pages.innerHTML = "";
   }
 }
 
@@ -999,6 +1070,7 @@ function loadState() {
 async function hydrateActiveProjectMedia() {
   const project = findHistoryProject(state.currentProjectId);
   if (!project || isBuiltInProject(project)) return;
+  invalidatePendingRender();
   await hydrateProjectMedia(project.data);
   if (project.id !== state.currentProjectId) return;
   applyForm(project.data);
@@ -1041,7 +1113,7 @@ function defaultImages() {
 }
 
 function normalizeImagesForContent(content, images) {
-  const nextImages = images && typeof images === "object" ? { ...images } : {};
+  const nextImages = images && typeof images === "object" && !Array.isArray(images) ? { ...images } : {};
   if (String(content || "").includes("[[image:sample]]") && !nextImages.sample) {
     nextImages.sample = defaultImages().sample;
   }
@@ -1252,12 +1324,20 @@ function toggleHistory() {
 
 async function openProject(projectId) {
   if (!projectId || projectId === state.currentProjectId) return;
-  saveState();
+  invalidatePendingRender();
+  if (!state.projectSwitching) saveState();
   const project = findHistoryProject(projectId);
   if (!project) return;
+  const switchSeq = (state.projectSwitchSeq = (state.projectSwitchSeq || 0) + 1);
+  state.projectSwitching = true;
   state.currentProjectId = project.id;
   state.scrollOffset = 0;
   await hydrateProjectMedia(project.data);
+  if (switchSeq !== state.projectSwitchSeq || project.id !== state.currentProjectId) {
+    if (switchSeq === state.projectSwitchSeq) state.projectSwitching = false;
+    return;
+  }
+  state.projectSwitching = false;
   applyForm(project.data);
   syncGuideReadOnlyMode();
   if (isBuiltInProject(project)) saveProjectStore();
@@ -1736,13 +1816,23 @@ function buildImageReferenceLookup(images) {
       if (!lookup.has(key)) lookup.set(key, []);
       lookup.get(key).push(id);
     });
+    const internalKey = `image:${id}`;
+    if (!lookup.has(internalKey)) lookup.set(internalKey, []);
+    lookup.get(internalKey).push(id);
   });
   return lookup;
 }
 
-function resolveObsidianImageReference(reference, lookup) {
-  const keys = imageReferenceKeys(reference);
-  for (const key of keys) {
+function resolveObsidianImageReference(reference, lookup, sourcePath = "") {
+  const raw = String(reference || "").trim().replace(/^<|>$/g, "");
+  const explicitPath = raw.startsWith("/") || raw.startsWith("./") || raw.startsWith("../");
+  const candidates = new Set();
+  const resolved = vaultReferenceFromSource(raw, sourcePath);
+  if (resolved) candidates.add(normalizeObsidianImagePath(resolved));
+  if (!explicitPath) {
+    for (const key of imageReferenceKeys(raw)) candidates.add(key);
+  }
+  for (const key of candidates) {
     const ids = lookup.get(key) || [];
     if (ids.length === 1) return { id: ids[0] };
     if (ids.length > 1) return { ambiguous: true };
@@ -1750,13 +1840,13 @@ function resolveObsidianImageReference(reference, lookup) {
   return { missing: true };
 }
 
-function convertObsidianImageReferences(markdown, images) {
+function convertObsidianImageReferences(markdown, images, sourcePath = "") {
   const lookup = buildImageReferenceLookup(images);
   const unresolved = new Set();
   let matched = 0;
   const replaceReference = (whole, reference) => {
     const target = String(reference || "").split("|")[0].trim();
-    const result = resolveObsidianImageReference(target, lookup);
+    const result = resolveObsidianImageReference(target, lookup, sourcePath);
     if (result.id) {
       matched += 1;
       return `[[image:${result.id}]]`;
@@ -1855,6 +1945,58 @@ async function connectObsidianVault() {
   }
 }
 
+async function restoreObsidianPluginMedia() {
+  if (!obsidianVault.handle) {
+    setObsidianVaultStatus("请先连接 Obsidian 仓库，再恢复插件图片。");
+    els.obsidianImportMenu.open = true;
+    requestAnimationFrame(() => positionToolPopover(els.obsidianImportMenu));
+    return;
+  }
+  els.status.textContent = "正在从 Obsidian 插件数据恢复图片…";
+  try {
+    if (!(await ensureObsidianVaultPermission())) return;
+    const dataFile = await findFileInObsidianVault(".obsidian/plugins/write-then-publish/data.json");
+    if (!dataFile) {
+      els.status.textContent = "没有找到插件数据 data.json，请确认当前仓库安装过「文象」插件。";
+      return;
+    }
+    const file = await dataFile.getFile();
+    const parsed = JSON.parse(await file.text());
+    const media = parsed?.media || {};
+    const entries = Object.entries(media).filter(([key, value]) => key.startsWith("image:") && String(value || "").startsWith("data:"));
+    if (!entries.length) {
+      els.status.textContent = "插件数据里没有可恢复的图片。";
+      return;
+    }
+    let restored = 0;
+    for (const [key, value] of entries) {
+      try {
+        await writeMedia(key, value);
+        const id = key.slice("image:".length);
+        const existing = state.images[id];
+        state.images[id] = {
+          ...(existing || {}),
+          src: value,
+          storageKey: key,
+          name: existing?.name || id,
+          sourcePath: existing?.sourcePath || id,
+          crop: existing?.crop ?? null,
+          layout: existing?.layout ?? defaultNewImageLayout(),
+        };
+        restored += 1;
+      } catch (error) {
+        console.warn("无法恢复图片", key, error);
+      }
+    }
+    updateImageList();
+    requestRender();
+    els.status.textContent = `已从 Obsidian 插件数据恢复 ${restored} 张图片`;
+  } catch (error) {
+    console.error(error);
+    els.status.textContent = "恢复 Obsidian 插件图片失败：" + error.message;
+  }
+}
+
 async function ensureObsidianVaultPermission() {
   if (!obsidianVault.handle) return false;
   let permission = await obsidianVault.handle.queryPermission({ mode: "read" });
@@ -1896,7 +2038,27 @@ function vaultReferenceParts(reference) {
     .filter(Boolean);
 }
 
-async function findFileInObsidianVault(reference) {
+function vaultReferenceFromSource(reference, sourcePath = "") {
+  const raw = String(reference || "").trim().replace(/^<|>$/g, "");
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) return null;
+  const parts = vaultReferenceParts(raw);
+  if (!parts.length) return null;
+  if (raw.startsWith("/")) return parts.join("/");
+  const sourceDir = String(sourcePath || "").split("/").filter(Boolean).slice(0, -1);
+  const combined = [...sourceDir, ...parts];
+  const result = [];
+  for (const part of combined) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      result.pop();
+      continue;
+    }
+    result.push(part);
+  }
+  return result.join("/") || null;
+}
+
+async function findFileInObsidianVault(reference, exact = false) {
   if (/^https?:/i.test(String(reference || ""))) return null;
   const parts = vaultReferenceParts(reference);
   if (!parts.length) return null;
@@ -1905,6 +2067,7 @@ async function findFileInObsidianVault(reference) {
     for (const part of parts.slice(0, -1)) directory = await directory.getDirectoryHandle(part);
     return await directory.getFileHandle(parts[parts.length - 1]);
   } catch {
+    if (exact) return null;
     return findObsidianFileByName(obsidianVault.handle, parts[parts.length - 1]);
   }
 }
@@ -1944,15 +2107,63 @@ function stripYamlFrontmatter(content) {
   return text;
 }
 
+async function switchToImportedProject(content) {
+  content = stripYamlFrontmatter(content);
+  invalidatePendingRender();
+  // 此刻 state.images 可能已经混入本次导入的新文章图片，
+  // 直接 saveState() 会把它们写进旧项目历史；先按旧项目自己的图片保存。
+  const current = findHistoryProject(state.currentProjectId);
+  const currentImages = state.images;
+  if (current && !isBuiltInProject(current)) {
+    state.images = { ...(current.data.images || {}) };
+    saveState();
+    state.images = currentImages;
+  } else {
+    saveState();
+  }
+  // 新项目只保留当前内容引用的图片，避免残留上一篇项目的图片。
+  const usedImageIds = new Set(internalImageReferenceIds(content));
+  const nextImages = {};
+  for (const id of usedImageIds) {
+    if (state.images[id]) nextImages[id] = state.images[id];
+  }
+  state.images = nextImages;
+  const project = createProject({
+    ...readForm(),
+    content,
+    images: { ...state.images },
+    source: "obsidian",
+  });
+  state.projects = [project, ...state.projects.filter((item) => item.id !== project.id)].slice(0, MAX_PROJECTS);
+  state.currentProjectId = project.id;
+  state.mode = "auto";
+  state.scrollOffset = 0;
+  const switchSeq = (state.projectSwitchSeq = (state.projectSwitchSeq || 0) + 1);
+  state.projectSwitching = true;
+  await hydrateProjectMedia(project.data);
+  if (project.id !== state.currentProjectId) {
+    if (switchSeq === state.projectSwitchSeq) state.projectSwitching = false;
+    return;
+  }
+  state.projectSwitching = false;
+  applyForm(project.data);
+  syncGuideReadOnlyMode();
+  resetTextHistory();
+  updateProjectHistory();
+  await render();
+}
+
 function closeObsidianImportMenu() {
   els.obsidianImportMenu.open = false;
 }
 
-async function importMarkdownFromConnectedVault(markdown) {
+async function importMarkdownFromConnectedVault(markdown, sourcePath = "") {
   if (!obsidianVault.handle || obsidianVault.importing) return false;
   obsidianVault.importing = true;
+  invalidatePendingRender();
   els.status.textContent = "正在从 Obsidian 仓库读取图片…";
   try {
+    await restoreImagesFromMedia(markdown, state.images);
     if (!(await ensureObsidianVaultPermission())) {
       els.status.textContent = "未获得仓库读取权限，请重新连接后再试。";
       return true;
@@ -1962,15 +2173,22 @@ async function importMarkdownFromConnectedVault(markdown) {
     const sourcePaths = new Map();
     const missing = [];
     for (const reference of extractMarkdownImageReferences(markdown)) {
-      if (resolveObsidianImageReference(reference, lookup).id) continue;
-      const handle = await findFileInObsidianVault(reference);
+      if (resolveObsidianImageReference(reference, lookup, sourcePath).id) continue;
+      const rawReference = String(reference || "").trim();
+      const explicitPath =
+        rawReference.startsWith("/") || rawReference.startsWith("./") || rawReference.startsWith("../");
+      const resolvedPath = vaultReferenceFromSource(reference, sourcePath) || reference;
+      let handle = await findFileInObsidianVault(resolvedPath, explicitPath);
+      if (!handle && !explicitPath && resolvedPath !== reference) {
+        handle = await findFileInObsidianVault(reference);
+      }
       if (!handle) {
         missing.push(reference);
         continue;
       }
       const file = await handle.getFile();
       files.push(file);
-      sourcePaths.set(file, reference);
+      sourcePaths.set(file, resolvedPath);
     }
     if (missing.length) {
       const message = `仓库已连接，但没有找到 ${missing.length} 张图片：${missing.slice(0, 3).join("、")}。请确认选择的是包含这些路径的 Obsidian 仓库根目录。`;
@@ -1980,13 +2198,13 @@ async function importMarkdownFromConnectedVault(markdown) {
       return true;
     }
     const imported = await addImageFiles(files, sourcePaths);
-    const converted = convertObsidianImageReferences(markdown, state.images);
+    const converted = convertObsidianImageReferences(markdown, state.images, sourcePath);
     if (converted.unresolved.length) {
       els.status.textContent = "发现重名图片，暂时无法自动判断该用哪一张。";
       return true;
     }
     state.importSource = "obsidian";
-    replaceEditorContent(markdown);
+    await switchToImportedProject(converted.content);
     els.status.textContent = `已从仓库自动读取 ${imported.ids.length} 张图片并完成导入`;
     closeObsidianImportMenu();
     return true;
@@ -2200,7 +2418,7 @@ async function loadObsidianFile(pathParts) {
     const fileHandle = await handle.getFileHandle(pathParts[pathParts.length - 1]);
     const file = await fileHandle.getFile();
     const text = await file.text();
-    await importMarkdownFromConnectedVault(text);
+    await importMarkdownFromConnectedVault(text, pathParts.join("/"));
   } catch (error) {
     console.error(error);
     els.status.textContent = "读取文件失败：" + error.message;
@@ -2843,6 +3061,42 @@ function isMarkdownImageBlock(line) {
     || /^!\[[^\]\n]*\]\((?:<[^>]+>|[^\s)]+)(?:\s+[^)]*)?\)$/.test(line);
 }
 
+// 行首是图片引用、后面还跟着说明文字时，拆成图片块 + 文字段落，
+// 避免 `[[image:id]] 说明` 被整行当作文本渲染成字面量。
+function leadingImageBlock(line, imageLookup) {
+  const internal = line.match(/^\[\[image:([\w-]+)\]\]([\s\S]*)$/);
+  if (internal) {
+    return {
+      id: internal[1],
+      rest: internal[2].trim(),
+      restOffset: internal[0].length - internal[2].length + countLeadingSpaces(internal[2]),
+    };
+  }
+
+  const obsidianEmbed = line.match(/^!\[\[([^\]\n]+)\]\]([\s\S]*)$/);
+  if (obsidianEmbed) {
+    const id = resolveObsidianImageReference(obsidianEmbed[1].split("|")[0].trim(), imageLookup).id;
+    if (!id) return null;
+    return {
+      id,
+      rest: obsidianEmbed[2].trim(),
+      restOffset: obsidianEmbed[0].length - obsidianEmbed[2].length + countLeadingSpaces(obsidianEmbed[2]),
+    };
+  }
+
+  const markdown = line.match(/^!\[[^\]\n]*\]\((?:<([^>]+)>|([^\s)]+))(?:\s+[^)]*)?\)([\s\S]*)$/);
+  if (markdown) {
+    const id = resolveObsidianImageReference(markdown[1] || markdown[2], imageLookup).id;
+    if (!id) return null;
+    return {
+      id,
+      rest: markdown[3].trim(),
+      restOffset: markdown[0].length - markdown[3].length + countLeadingSpaces(markdown[3]),
+    };
+  }
+  return null;
+}
+
 function parseBlocks(content, images = {}) {
   const normalized = stripYamlFrontmatter(content).replace(/\r\n/g, "\n");
   const lines = normalized.split("\n");
@@ -2870,6 +3124,16 @@ function parseBlocks(content, images = {}) {
     const trimmedStart = lineOffsets[index] + leading;
 
     if (trimmed) {
+      const leadingImage = leadingImageBlock(trimmed, imageLookup);
+      if (leadingImage) {
+        flushParagraph();
+        blocks.push({ type: "image", id: leadingImage.id });
+        if (leadingImage.rest) {
+          paragraphLines.push(parseInline(leadingImage.rest, trimmedStart + leadingImage.restOffset));
+        }
+        continue;
+      }
+
       const imageId = resolveMarkdownImageBlock(trimmed, imageLookup);
       if (isMarkdownImageBlock(trimmed)) {
         flushParagraph();
@@ -4059,6 +4323,9 @@ function escapeAttribute(value) {
 }
 
 async function render() {
+  const renderSeq = (state.renderSeq = (state.renderSeq || 0) + 1);
+  await restoreImagesFromMedia(els.content.value, state.images);
+  if (renderSeq !== state.renderSeq || state.projectSwitching) return;
   const settings = readForm();
   CANVAS_HEIGHT = getCardHeight(settings.cardRatio);
   updateAppMode();
@@ -4574,7 +4841,7 @@ async function publishToPlatform(platform) {
     document.documentElement.dataset.wtpExtensionReady = "";
     updateExtensionIndicator();
     els.status.textContent = hostSupported
-      ? `扩展未注入当前页面：请在 chrome://extensions 刷新「写了就发-自动发布」，再 Cmd+Shift+R 强刷本页后重试`
+      ? `扩展未注入当前页面：请在 chrome://extensions 刷新「文象-自动发布」，再 Cmd+Shift+R 强刷本页后重试`
       : `当前地址不在扩展支持范围：请用 Chrome 打开 http://localhost:5173 或 https://hiesther.com（当前 ${location.href}）`;
     return;
   }
@@ -4790,6 +5057,10 @@ function bindEvents() {
   });
   els.contentImage.addEventListener("change", handleContentImage);
   els.connectObsidianVault.addEventListener("click", connectObsidianVault);
+  els.restoreObsidianMedia?.addEventListener("click", () => {
+    const restore = window.restoreObsidianPluginMedia || restoreObsidianPluginMedia;
+    void restore();
+  });
   els.obsidianBrowserRefresh.addEventListener("click", refreshObsidianBrowser);
   els.sidebarObsidianRefresh?.addEventListener("click", refreshSidebarObsidianBrowser);
   els.applyImageWidth?.addEventListener("click", applyImageWidthToAll);

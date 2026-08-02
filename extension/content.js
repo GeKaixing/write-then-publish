@@ -6,7 +6,7 @@ const TASK_TTL_MS = 15 * 60 * 1000;
 const ROUTE_POLL_MS = 500;
 
 const EXTENSION_HOSTS = new Set(["localhost", "127.0.0.1", "hiesther.com", "www.hiesther.com"]);
-const EXTENSION_VERSION = "1.1.0"; // @wtp-version
+const EXTENSION_VERSION = "1.1.4"; // @wtp-version
 
 if (EXTENSION_HOSTS.has(location.hostname)) {
   document.documentElement.dataset.wtpExtensionReady = "1";

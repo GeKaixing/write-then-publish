@@ -119,7 +119,7 @@
             respond(false, "编辑器尚未初始化完成");
             return;
           }
-          return importer(String(payload.markdown || ""));
+          return importer(String(payload.markdown || ""), payload.path || "");
         })
         .then((result) => respond(true, result || { imported: 0, unresolved: [] }))
         .catch((error) => respond(false, String(error?.message || error)));

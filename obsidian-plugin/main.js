@@ -34,6 +34,9 @@ module.exports = class WriteThenPublishPlugin extends Plugin {
     this._assetCache = {};
     this._editorHtml = null;
     this._saveTimer = null;
+    this._syncingNote = false;
+    this._lastSyncedPath = null;
+    this._lastSyncedMtime = null;
 
     this.registerView(VIEW_TYPE, (leaf) => {
       const view = new WriteThenPublishView(leaf, this);
@@ -43,18 +46,87 @@ module.exports = class WriteThenPublishPlugin extends Plugin {
 
     this.addCommand({
       id: "open-write-then-publish",
-      name: "打开「写了就发」",
+      name: "打开「文象」",
       callback: () => {
         void this.activateView();
       },
     });
 
+    this.registerEvent(
+      this.app.workspace.on("file-open", (file) => {
+        if (file && file.extension === "md") {
+          void this.syncActiveNoteToEditor();
+        }
+      }),
+    );
+
     this.addCommand({
       id: "import-active-note",
-      name: "将当前笔记导入「写了就发」",
+      name: "将当前笔记导入「文象」",
       callback: () => {
         void this.importActiveNote();
       },
+    });
+
+    this.registerMarkdownPostProcessor((element, context) => {
+      const media = this.data.media || {};
+      const makeImage = (imageId) => {
+        const src = media[`image:${imageId}`];
+        if (!src) return null;
+        const img = document.createElement("img");
+        img.src = src;
+        img.alt = imageId;
+        img.classList.add("wtp-image-reference");
+        return img;
+      };
+      const walk = (node) => {
+        for (const child of Array.from(node.childNodes)) {
+          if (child.nodeType === Node.TEXT_NODE) {
+            const text = child.nodeValue || "";
+            if (!text.includes("[[image:")) continue;
+            const fragment = document.createDocumentFragment();
+            let cursor = 0;
+            for (const match of text.matchAll(/\[\[image:([\w-]+)\]\]/g)) {
+              const before = text.slice(cursor, match.index);
+              if (before) fragment.append(document.createTextNode(before));
+              const imageId = match[1];
+              const img = makeImage(imageId);
+              if (img) fragment.append(img);
+              else fragment.append(document.createTextNode(match[0]));
+              cursor = match.index + match[0].length;
+            }
+            if (cursor < text.length) fragment.append(document.createTextNode(text.slice(cursor)));
+            if (fragment.childNodes.length) {
+              child.replaceWith(fragment);
+            }
+          } else if (child.nodeType === Node.ELEMENT_NODE) {
+            if (child.nodeName === "PRE" || child.nodeName === "CODE") continue;
+            const innerText = child.textContent || "";
+            if (innerText.startsWith("[[image:") && innerText.endsWith("]]")) {
+              const match = innerText.match(/^\[\[image:([\w-]+)\]\]$/);
+              if (match) {
+                const img = makeImage(match[1]);
+                if (img) {
+                  child.replaceWith(img);
+                  continue;
+                }
+              }
+            }
+            const href = String(child.getAttribute?.("href") || child.getAttribute?.("data-href") || "");
+            const hrefMatch = /^(?:image[/:])[\w-]+$/.exec(href);
+            if (hrefMatch) {
+              const img = makeImage(hrefMatch[0].replace(/^image[/:]/, ""));
+              if (img) {
+                child.replaceWith(img);
+                continue;
+              }
+            }
+            walk(child);
+          }
+        }
+      };
+      walk(element);
+      return Promise.resolve();
     });
   }
 
@@ -71,7 +143,7 @@ module.exports = class WriteThenPublishPlugin extends Plugin {
     this.app.workspace.detachLeavesOfType(VIEW_TYPE);
   }
 
-  async activateView() {
+  async activateView({ syncOnOpen = true } = {}) {
     const { workspace } = this.app;
     let leaf = workspace.getLeavesOfType(VIEW_TYPE)[0];
     if (!leaf) {
@@ -79,6 +151,45 @@ module.exports = class WriteThenPublishPlugin extends Plugin {
       await leaf.setViewState({ type: VIEW_TYPE, active: true });
     }
     workspace.revealLeaf(leaf);
+    this.collapseLeftSidebar();
+    if (syncOnOpen) {
+      try {
+        await this.syncActiveNoteToEditor();
+      } catch (error) {
+        console.error("打开「文象」后同步失败", error);
+      }
+    }
+  }
+
+  collapseLeftSidebar() {
+    const workspace = this.app.workspace;
+    if (workspace.leftSplit) workspace.leftSplit.collapsed = true;
+    if (workspace.leftRibbon) workspace.leftRibbon.collapsed = true;
+  }
+
+  async syncActiveNoteToEditor() {
+    if (!this.editorView) return;
+    if (this._syncingNote) return;
+    this._syncingNote = true;
+    try {
+      while (true) {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile || activeFile.extension !== "md") break;
+        const mtime = activeFile.stat?.mtime || 0;
+        if (this._lastSyncedPath === activeFile.path && this._lastSyncedMtime === mtime) break;
+        const markdown = await this.app.vault.read(activeFile);
+        await this.editorView.awaitBridgeReady();
+        await this.editorView.requestImport(markdown, activeFile.path);
+        this._lastSyncedPath = activeFile.path;
+        this._lastSyncedMtime = mtime;
+        const nextFile = this.app.workspace.getActiveFile();
+        if (!nextFile || (nextFile.path === activeFile.path && nextFile.stat?.mtime === mtime)) break;
+      }
+    } catch (error) {
+      console.error("同步当前笔记到「文象」失败", error);
+    } finally {
+      this._syncingNote = false;
+    }
   }
 
   async importActiveNote() {
@@ -88,28 +199,28 @@ module.exports = class WriteThenPublishPlugin extends Plugin {
       return;
     }
     if (!this.editorView) {
-      await this.activateView();
+      await this.activateView({ syncOnOpen: false });
     }
     if (!this.editorView) {
-      new Notice("「写了就发」面板没有成功打开");
+      new Notice("「文象」面板没有成功打开");
       return;
     }
     const markdown = await this.app.vault.read(activeFile);
     if (this.editorView) {
       try {
         await this.editorView.awaitBridgeReady();
-        const result = await this.editorView.requestImport(markdown);
+        const result = await this.editorView.requestImport(markdown, activeFile.path);
         const imported = Number(result?.imported) || 0;
         const unresolved = (result?.unresolved || []).length;
         new Notice(
-          `已将「${activeFile.basename}」导入写了就发：${imported} 张图片${unresolved ? `，${unresolved} 个引用未解析` : ""}`,
+          `已将「${activeFile.basename}」导入文象：${imported} 张图片${unresolved ? `，${unresolved} 个引用未解析` : ""}`,
         );
       } catch (error) {
         new Notice(`导入失败：${String(error?.message || error)}`);
       }
       return;
     }
-    new Notice(`已将「${activeFile.basename}」导入写了就发`);
+    new Notice(`已将「${activeFile.basename}」导入文象`);
   }
 
   scheduleSave() {
@@ -243,7 +354,7 @@ module.exports = class WriteThenPublishPlugin extends Plugin {
     return result;
   }
 
-  async findFileInVault(referencePath, referenceName) {
+  async findFileInVault(referencePath, referenceName, exact = false) {
     const parts = String(referencePath || "").replace(/^\/+/, "").split("/").filter(Boolean);
     const name = String(referenceName || "").split("/").pop();
     if (!name) return null;
@@ -253,6 +364,7 @@ module.exports = class WriteThenPublishPlugin extends Plugin {
     } catch {
       // Fall back to recursive filename search.
     }
+    if (exact) return null;
     const found = await this.searchVaultForFileName("", name);
     return found ? { path: found } : null;
   }
@@ -324,7 +436,7 @@ class WriteThenPublishView extends ItemView {
   }
 
   getDisplayText() {
-    return "写了就发";
+    return "文象";
   }
 
   getIcon() {
@@ -332,6 +444,7 @@ class WriteThenPublishView extends ItemView {
   }
 
   async onOpen() {
+    this.plugin.collapseLeftSidebar();
     const container = this.contentEl || this.containerEl.children[1];
     container.empty();
     container.addClass("wtp-editor-view");
@@ -349,6 +462,13 @@ class WriteThenPublishView extends ItemView {
         border: 0;
         display: block;
         background: #fff;
+      }
+      .wtp-image-reference {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        margin: 8px 0;
+        border-radius: 8px;
       }
     `;
 
@@ -408,10 +528,10 @@ class WriteThenPublishView extends ItemView {
     return new Promise((resolve) => this.bridgeReadyWaiters.push(resolve));
   }
 
-  requestImport(markdown) {
+  requestImport(markdown, sourcePath = "") {
     return new Promise((resolve, reject) => {
       this.postMessage(
-        { type: "wtp-bridge-in", method: "import-markdown", payload: { markdown } },
+        { type: "wtp-bridge-in", method: "import-markdown", payload: { markdown, path: sourcePath } },
         (result) => {
           if (result.ok) resolve(result.result);
           else reject(new Error(result.error || "导入失败"));
@@ -479,13 +599,13 @@ class WriteThenPublishView extends ItemView {
       case "vault-list":
         return this.plugin.listVaultDirectory(payload.path || "");
       case "vault-find-file":
-        return this.plugin.findFileInVault(payload?.path, payload?.name);
+        return this.plugin.findFileInVault(payload?.path, payload?.name, Boolean(payload?.exact));
       case "vault-read-text":
         return this.app.vault.adapter.read(payload.path);
       case "vault-read-binary":
         return this.app.vault.adapter.readBinary(payload.path);
       case "import-markdown":
-        return { ok: true, message: "请使用「将当前笔记导入写了就发」命令" };
+        return { ok: true, message: "请使用「将当前笔记导入文象」命令" };
       case "save-blob":
         return this.plugin.saveBlobToVault(payload);
       default:

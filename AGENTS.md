@@ -1,4 +1,4 @@
-# AGENTS.md — write-then-publish（写了就发）
+# AGENTS.md — write-then-publish（文象）
 
 ## 项目概览
 

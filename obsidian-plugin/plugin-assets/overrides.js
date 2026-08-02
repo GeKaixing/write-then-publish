@@ -45,10 +45,14 @@
   };
   window.connectObsidianVault = () => loadObsidianVaultConnection();
   window.ensureObsidianVaultPermission = async () => true;
-  window.findFileInObsidianVault = async (reference) => {
+  window.findFileInObsidianVault = async (reference, exact = false) => {
     const parts = typeof window.vaultReferenceParts === "function" ? window.vaultReferenceParts(reference) : [];
     if (!parts.length) return null;
-    const found = await request("vault-find-file", { path: parts.join("/"), name: parts[parts.length - 1] });
+    const found = await request("vault-find-file", {
+      path: parts.join("/"),
+      name: parts[parts.length - 1],
+      exact,
+    });
     return found?.path || null;
   };
   window.findObsidianFileByName = async () => null;
@@ -95,7 +99,7 @@
     els.status.textContent = "正在从 Obsidian 仓库读取文件…";
     try {
       const markdown = await request("vault-read-text", { path });
-      await importMarkdownFromConnectedVault(markdown);
+      await importMarkdownFromConnectedVault(markdown, path);
     } catch (error) {
       console.error(error);
       els.status.textContent = "读取文件失败：" + error.message;
@@ -103,23 +107,34 @@
   };
 
   // 从仓库读取图片并导入编辑器，保持网页版的数据流与重名提示。
-  window.importMarkdownFromConnectedVault = async (markdown) => {
+  window.importMarkdownFromConnectedVault = async (markdown, sourcePath = "") => {
     if (!obsidianVault.handle || obsidianVault.importing) {
       return { imported: 0, unresolved: [], skipped: true };
     }
     obsidianVault.importing = true;
+    invalidatePendingRender();
     els.status.textContent = "正在从 Obsidian 仓库读取图片…";
     try {
+      await restoreImagesFromMedia(markdown, state.images);
       const lookup = buildImageReferenceLookup(state.images);
       const files = [];
       const sourcePaths = new Map();
       const missing = [];
       for (const reference of extractMarkdownImageReferences(markdown)) {
-        if (resolveObsidianImageReference(reference, lookup).id) continue;
+        if (resolveObsidianImageReference(reference, lookup, sourcePath).id) continue;
+        const rawReference = String(reference || "").trim();
+        const explicitPath =
+          rawReference.startsWith("/") || rawReference.startsWith("./") || rawReference.startsWith("../");
         let fileData = null;
-        let resolvedPath = reference;
+        let resolvedPath =
+          typeof window.vaultReferenceFromSource === "function"
+            ? window.vaultReferenceFromSource(reference, sourcePath) || reference
+            : reference;
         try {
-          const foundPath = await window.findFileInObsidianVault(reference);
+          let foundPath = await window.findFileInObsidianVault(resolvedPath, explicitPath);
+          if (!foundPath && !explicitPath && resolvedPath !== reference) {
+            foundPath = await window.findFileInObsidianVault(reference);
+          }
           if (foundPath) {
             resolvedPath = foundPath;
             fileData = await request("vault-read-binary", { path: foundPath });
@@ -134,7 +149,7 @@
         const fileName = String(resolvedPath).split("/").filter(Boolean).pop() || "image";
         const file = new File([fileData], fileName, { type: imageMimeTypeForPath(resolvedPath) });
         files.push(file);
-        sourcePaths.set(file, reference);
+        sourcePaths.set(file, resolvedPath);
       }
       if (missing.length) {
         const message = `没有找到 ${missing.length} 张图片：${missing.slice(0, 3).join("、")}。请确认引用路径在仓库内存在。`;
@@ -144,13 +159,13 @@
         return { imported: 0, unresolved: [], missing: missing.length };
       }
       const imported = await addImageFiles(files, sourcePaths);
-      const converted = convertObsidianImageReferences(markdown, state.images);
+      const converted = convertObsidianImageReferences(markdown, state.images, sourcePath);
       if (converted.unresolved.length) {
         els.status.textContent = "发现重名图片，暂时无法自动判断该用哪一张。";
         return { imported: imported.ids.length, unresolved: converted.unresolved };
       }
       state.importSource = "obsidian";
-      replaceEditorContent(converted.content);
+      await switchToImportedProject(converted.content);
       els.status.textContent = `已从仓库自动读取 ${imported.ids.length} 张图片并完成导入`;
       closeObsidianImportMenu();
       return { imported: imported.ids.length, unresolved: [] };
@@ -172,7 +187,49 @@
     }
   };
 
+  // 插件内媒体库就是 data.json 里的 media，直接从桥接数据恢复即可。
+  window.restoreObsidianPluginMedia = async () => {
+    els.status.textContent = "正在从插件数据恢复图片…";
+    try {
+      const media = await request("media-load");
+      const entries = Object.entries(media || {}).filter(
+        ([key, value]) => key.startsWith("image:") && String(value || "").startsWith("data:"),
+      );
+      let restored = 0;
+      for (const [key, value] of entries) {
+        const id = key.slice("image:".length);
+        const existing = state.images[id];
+        state.images[id] = {
+          ...(existing || {}),
+          src: value,
+          storageKey: key,
+          name: existing?.name || id,
+          sourcePath: existing?.sourcePath || id,
+          crop: existing?.crop ?? null,
+          layout: existing?.layout ?? defaultNewImageLayout(),
+        };
+        restored += 1;
+      }
+      updateImageList();
+      requestRender();
+      els.status.textContent = `已从插件数据恢复 ${restored} 张图片`;
+    } catch (error) {
+      console.error(error);
+      els.status.textContent = "恢复插件图片失败：" + String(error?.message || error);
+    }
+  };
+
   // 覆盖初始化完成后再次连接仓库，替换网页版启动时失败的读取。
   void loadObsidianVaultConnection();
-  void bridge.postBridgeRequest("bridge-ready", {});
+  void bridge.postBridgeRequest("bridge-ready", {}).then(async () => {
+    // 桥接就绪后只恢复当前项目媒体并重渲染；不再把整个媒体库塞进
+    // state.images，避免不同文章的 cover.jpg 等重名文件互相串图。
+    if (typeof window.hydrateActiveProjectMedia === "function") {
+      await window.hydrateActiveProjectMedia();
+    }
+    if (typeof window.render === "function") {
+      await window.render();
+    }
+    if (window.lucide) window.lucide.createIcons();
+  });
 })();
