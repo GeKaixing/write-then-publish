@@ -1,0 +1,16 @@
+{
+  "name": "wtp-agent-desktop",
+  "productName": "文象 Agent Studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "文象 Agent Studio 本地桌面应用（LangGraph + LangChain 多 agent 流水线）",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "devDependencies": {
+    "electron": "40.9.3"
+  }
+}

@@ -2,3 +2,7 @@ node_modules
 outputs
 .DS_Store
 .vercel
+
+# 本地工具与输出产物
+.hermes/
+out/
