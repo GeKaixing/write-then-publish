@@ -158,8 +158,7 @@ button:disabled {
 .history-sidebar {
   position: relative;
   width: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   background: var(--paper);
   border-right: 1px solid var(--line);
   min-width: 0;
@@ -460,16 +459,15 @@ body[data-guide-readonly="true"] .editor-textarea:focus {
   display: grid;
   grid-row: 4;
   min-height: 0;
-  align-self: start;
-  grid-template-rows: auto auto;
-  align-content: start;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .sidebar-obsidian-panel .obsidian-browser-content {
+  align-content: start;
   max-height: none;
-  overflow: visible;
+  overflow-y: auto;
 }
 
 .history-list[hidden],
