@@ -158,7 +158,8 @@ button:disabled {
 .history-sidebar {
   position: relative;
   width: 100%;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: var(--paper);
   border-right: 1px solid var(--line);
   min-width: 0;
@@ -459,13 +460,16 @@ body[data-guide-readonly="true"] .editor-textarea:focus {
   display: grid;
   grid-row: 4;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
+  align-self: start;
+  grid-template-rows: auto auto;
+  align-content: start;
   gap: 10px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .sidebar-obsidian-panel .obsidian-browser-content {
   max-height: none;
+  overflow: visible;
 }
 
 .history-list[hidden],
@@ -1520,13 +1524,27 @@ body[data-app-mode="article"] .topbar-ratio {
 .obsidian-tree-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  border-radius: 5px;
+  gap: 5px;
+  padding: 2px 6px;
+  border-radius: 4px;
   cursor: default;
   user-select: none;
   color: var(--ink);
-  min-height: 28px;
+  font-size: 12px;
+  line-height: 1.2;
+  min-height: 22px;
+}
+
+/* 一级目录行：固定行高，避免被内容自动撑高导致参差 */
+.obsidian-browser-content > .obsidian-tree-item,
+.obsidian-vault-tree > .obsidian-tree-item {
+  height: 22px;
+}
+
+/* 一级以下（二级及更深）：行高自适应内容，不再强制 22px */
+.obsidian-tree-children .obsidian-tree-item {
+  height: auto;
+  min-height: 0;
 }
 
 .obsidian-tree-item:hover {
@@ -1534,8 +1552,8 @@ body[data-app-mode="article"] .topbar-ratio {
 }
 
 .obsidian-tree-item .tree-toggle {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -1549,8 +1567,8 @@ body[data-app-mode="article"] .topbar-ratio {
 }
 
 .obsidian-tree-item .tree-icon {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
   color: var(--muted);
 }
@@ -1563,6 +1581,7 @@ body[data-app-mode="article"] .topbar-ratio {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--ink);
 }
 
 .obsidian-tree-item.file-item {
@@ -1576,7 +1595,7 @@ body[data-app-mode="article"] .topbar-ratio {
 
 .obsidian-tree-children {
   display: grid;
-  padding-left: 20px;
+  padding-left: 18px;
 }
 
 .obsidian-tree-children[hidden] {
@@ -1584,7 +1603,7 @@ body[data-app-mode="article"] .topbar-ratio {
 }
 
 .obsidian-tree-loading {
-  padding: 4px 6px 4px 26px;
+  padding: 2px 6px 2px 24px;
   color: var(--muted);
   font-size: 12px;
 }
