@@ -1914,6 +1914,8 @@ async function loadObsidianVaultConnection() {
     const handle = await readStoredObsidianVault();
     if (!handle) return;
     obsidianVault.handle = handle;
+    sidebarObsidianTreeReady = false;
+    obsidianExpandedDirs.clear();
     const permission = await handle.queryPermission({ mode: "read" });
     setObsidianVaultStatus(permission === "granted" ? `已连接：${handle.name}` : `已记住：${handle.name}（首次粘贴时确认读取）`, permission === "granted");
     if (permission === "granted") {
@@ -1934,6 +1936,8 @@ async function connectObsidianVault() {
   try {
     const handle = await window.showDirectoryPicker({ mode: "read" });
     obsidianVault.handle = handle;
+    sidebarObsidianTreeReady = false;
+    obsidianExpandedDirs.clear();
     await saveObsidianVault(handle);
     setObsidianVaultStatus(`已连接：${handle.name}`, true);
     els.obsidianImportStatus.textContent = "仓库已连接。以后直接把 Obsidian Markdown 粘贴到正文编辑区即可。";
@@ -2264,21 +2268,28 @@ async function lazyLoadObsidianVaultTree() {
   }
 }
 
-async function refreshSidebarObsidianBrowser() {
+let sidebarObsidianTreeReady = false;
+const obsidianExpandedDirs = new Set();
+
+async function refreshSidebarObsidianBrowser(force = false) {
   const container = els.sidebarObsidianContent;
   if (!container) return;
   if (!obsidianVault.handle) {
     container.innerHTML = '<p class="obsidian-browser-empty">尚未连接 Obsidian 仓库，点工具栏的粘贴按钮连接</p>';
+    sidebarObsidianTreeReady = false;
     return;
   }
+  if (!force && sidebarObsidianTreeReady) return;
   if (!(await ensureObsidianVaultPermission())) return;
   container.innerHTML = '<div class="obsidian-tree-loading">加载中…</div>';
   try {
     const tree = await readVaultDirectory(obsidianVault.handle);
     renderVaultTree(tree, container);
+    sidebarObsidianTreeReady = true;
   } catch (error) {
     console.error(error);
     container.innerHTML = '<p class="obsidian-error">读取仓库失败</p>';
+    sidebarObsidianTreeReady = false;
   }
 }
 
@@ -2366,6 +2377,7 @@ function renderVaultTree(entries, container, depth = 0, pathParts = []) {
       label.textContent = entry.name;
       row.append(label);
       entry._pathParts = [...pathParts, entry.name];
+      const pathKey = entry._pathParts.join("/");
       const childrenContainer = document.createElement("div");
       childrenContainer.className = "obsidian-tree-children";
       childrenContainer.hidden = true;
@@ -2374,11 +2386,17 @@ function renderVaultTree(entries, container, depth = 0, pathParts = []) {
         event.stopPropagation();
         const isHidden = childrenContainer.hidden;
         if (isHidden) {
+          obsidianExpandedDirs.add(pathKey);
           expandVaultDirectory(row, entry);
         } else {
+          obsidianExpandedDirs.delete(pathKey);
           collapseVaultDirectory(row);
         }
       });
+      // 重建后恢复展开状态，点击文件时不会退回一级目录
+      if (obsidianExpandedDirs.has(pathKey)) {
+        void expandVaultDirectory(row, entry);
+      }
     } else {
       const toggle = document.createElement("span");
       toggle.className = "tree-toggle";
@@ -5062,7 +5080,7 @@ function bindEvents() {
     void restore();
   });
   els.obsidianBrowserRefresh.addEventListener("click", refreshObsidianBrowser);
-  els.sidebarObsidianRefresh?.addEventListener("click", refreshSidebarObsidianBrowser);
+  els.sidebarObsidianRefresh?.addEventListener("click", () => refreshSidebarObsidianBrowser(true));
   els.applyImageWidth?.addEventListener("click", applyImageWidthToAll);
   els.applyFixedImageSize?.addEventListener("click", applyFixedImageSizeToAll);
   els.bgImageInput.addEventListener("change", handleBgImage);
